@@ -17,6 +17,8 @@ services:
         value: Anorganik,B3,Kertas,Organik,Residu
       - key: CORS_ORIGINS
         sync: false
+      - key: CORS_ORIGIN_REGEX
+        value: https://.*\.vercel\.app
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY

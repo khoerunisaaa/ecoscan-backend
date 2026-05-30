@@ -53,6 +53,7 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 
 
 CATEGORY_MAP = {
@@ -84,6 +85,7 @@ app = FastAPI(title=APP_NAME, version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS or ["*"],
+    allow_origin_regex=CORS_ORIGIN_REGEX or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -272,6 +274,8 @@ def health() -> dict[str, Any]:
         "model_loaded": model is not None,
         "model_path": str(MODEL_PATH),
         "database": "supabase" if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY else "memory",
+        "cors_origins": CORS_ORIGINS,
+        "cors_origin_regex": CORS_ORIGIN_REGEX,
         "error": model_error,
     }
 
