@@ -24,6 +24,8 @@ Endpoint utama:
 
 - `POST /api/v1/classify` dengan multipart field `file`
 - `GET /api/v1/history`
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
 - `GET /health`
 - `POST /predict` kompatibel dengan frontend lama
 

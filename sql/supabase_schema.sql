@@ -11,3 +11,14 @@ create table if not exists public.scan_history (
 
 create index if not exists scan_history_created_at_idx
   on public.scan_history (created_at desc);
+
+create table if not exists public.app_users (
+  id uuid primary key,
+  email text not null unique,
+  name text not null,
+  password_hash text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists app_users_email_idx
+  on public.app_users (email);
