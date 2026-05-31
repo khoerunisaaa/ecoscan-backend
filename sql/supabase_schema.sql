@@ -9,6 +9,13 @@ create table if not exists public.scan_history (
   created_at timestamptz not null default now()
 );
 
+alter table public.scan_history
+  drop constraint if exists scan_history_category_check;
+
+alter table public.scan_history
+  add constraint scan_history_category_check
+  check (category in ('Organik', 'Anorganik', 'B3', 'Kertas', 'Residu'));
+
 create index if not exists scan_history_created_at_idx
   on public.scan_history (created_at desc);
 

@@ -208,6 +208,11 @@ class ProfileUpdate(BaseModel):
     email: str | None = Field(default=None, min_length=5, max_length=254)
 
 
+class PasswordUpdate(BaseModel):
+    current_password: str = Field(min_length=6, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
 def load_model_once() -> Any | None:
     global model, model_error
 
@@ -298,6 +303,27 @@ async def fetch_user_by_email(email: str) -> dict[str, Any] | None:
     params = {
         "select": "*",
         "email": f"eq.{email}",
+        "limit": "1",
+    }
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_USERS_TABLE}",
+            params=params,
+            headers=supabase_headers(),
+        )
+    response.raise_for_status()
+    rows = response.json()
+    return rows[0] if rows else None
+
+
+async def fetch_user_by_id(user_id: str) -> dict[str, Any] | None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return next((item for item in memory_users.values() if item["id"] == user_id), None)
+
+    params = {
+        "select": "*",
+        "id": f"eq.{user_id}",
         "limit": "1",
     }
 
@@ -737,6 +763,33 @@ async def update_profile(user_id: str, payload: ProfileUpdate) -> dict[str, Any]
     return public_user(rows[0])
 
 
+async def update_password(user_id: str, payload: PasswordUpdate) -> None:
+    user = await fetch_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
+
+    if not verify_password(payload.current_password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Password lama tidak sesuai.")
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=422, detail="Password baru harus berbeda dari password lama.")
+
+    password_hash = hash_password(payload.new_password)
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        user["password_hash"] = password_hash
+        return
+
+    headers = {**supabase_headers("return=minimal"), "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_USERS_TABLE}",
+            params={"id": f"eq.{user_id}"},
+            json={"password_hash": password_hash},
+            headers=headers,
+        )
+    response.raise_for_status()
+
+
 async def classify_upload(file: UploadFile) -> dict[str, Any]:
     current_model = load_model_once()
     if current_model is None:
@@ -903,3 +956,12 @@ async def user_update(user_id: str, payload: ProfileUpdate) -> dict[str, Any]:
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Gagal memperbarui profil: {exc}") from exc
     return {"user": user}
+
+
+@app.put(f"{API_PREFIX}/users/{{user_id}}/password")
+async def user_password_update(user_id: str, payload: PasswordUpdate) -> dict[str, str]:
+    try:
+        await update_password(user_id, payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal memperbarui password: {exc}") from exc
+    return {"message": "Password berhasil diperbarui."}
