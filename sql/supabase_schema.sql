@@ -1,5 +1,6 @@
 create table if not exists public.scan_history (
   id uuid primary key,
+  user_id uuid,
   filename text not null,
   predicted_class text not null,
   category text not null check (category in ('Organik', 'Anorganik', 'B3', 'Kertas', 'Residu')),
@@ -10,6 +11,9 @@ create table if not exists public.scan_history (
 );
 
 alter table public.scan_history
+  add column if not exists user_id uuid;
+
+alter table public.scan_history
   drop constraint if exists scan_history_category_check;
 
 alter table public.scan_history
@@ -18,6 +22,9 @@ alter table public.scan_history
 
 create index if not exists scan_history_created_at_idx
   on public.scan_history (created_at desc);
+
+create index if not exists scan_history_user_id_idx
+  on public.scan_history (user_id, created_at desc);
 
 create table if not exists public.app_users (
   id uuid primary key,
@@ -30,6 +37,13 @@ create table if not exists public.app_users (
 
 alter table public.app_users
   add column if not exists avatar_url text not null default '';
+
+alter table public.scan_history
+  drop constraint if exists scan_history_user_id_fkey;
+
+alter table public.scan_history
+  add constraint scan_history_user_id_fkey
+  foreign key (user_id) references public.app_users(id) on delete set null;
 
 create index if not exists app_users_email_idx
   on public.app_users (email);

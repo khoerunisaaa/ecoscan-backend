@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import httpx
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
@@ -53,7 +53,6 @@ SUPABASE_HISTORY_TABLE = os.getenv("SUPABASE_HISTORY_TABLE", "scan_history")
 SUPABASE_USERS_TABLE = os.getenv("SUPABASE_USERS_TABLE", "app_users")
 SUPABASE_COMMUNITY_POSTS_TABLE = os.getenv("SUPABASE_COMMUNITY_POSTS_TABLE", "community_posts")
 SUPABASE_COMMUNITY_COMMENTS_TABLE = os.getenv("SUPABASE_COMMUNITY_COMMENTS_TABLE", "community_comments")
-SUPABASE_LEADERBOARD_TABLE = os.getenv("SUPABASE_LEADERBOARD_TABLE", "community_leaderboard")
 SUPABASE_TRIVIA_TABLE = os.getenv("SUPABASE_TRIVIA_TABLE", "eco_trivia")
 SUPABASE_CHALLENGES_TABLE = os.getenv("SUPABASE_CHALLENGES_TABLE", "weekly_challenges")
 CORS_ORIGINS = [
@@ -142,12 +141,6 @@ memory_community_posts: list[dict[str, Any]] = [
         "comments": [],
         "created_at": "Minggu ini",
     },
-]
-memory_leaderboard: list[dict[str, Any]] = [
-    {"rank": 1, "name": "Raka", "scans": 48, "points": 320},
-    {"rank": 2, "name": "Nadia", "scans": 41, "points": 286},
-    {"rank": 3, "name": "Bima", "scans": 36, "points": 244},
-    {"rank": 4, "name": "Sari", "scans": 29, "points": 198},
 ]
 memory_challenge: dict[str, Any] = {
     "id": "weekly-plastic-10",
@@ -403,10 +396,12 @@ def build_scan_response(
     predicted_label: str,
     confidence: float,
     raw_predictions: list[float],
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     category = map_category(predicted_label)
     return {
         "id": str(uuid4()),
+        "user_id": user_id,
         "filename": filename,
         "predicted_class": category,
         "specific_class": predicted_label,
@@ -426,6 +421,7 @@ async def save_history(record: dict[str, Any]) -> None:
 
     payload = {
         "id": record["id"],
+        "user_id": record.get("user_id"),
         "filename": record["filename"],
         "predicted_class": record["specific_class"],
         "category": record["category"],
@@ -448,9 +444,10 @@ async def save_history(record: dict[str, Any]) -> None:
     response.raise_for_status()
 
 
-async def fetch_history(limit: int) -> list[dict[str, Any]]:
+async def fetch_history(limit: int, user_id: str | None = None) -> list[dict[str, Any]]:
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        return memory_history[:limit]
+        rows = [item for item in memory_history if not user_id or item.get("user_id") == user_id]
+        return rows[:limit]
 
     headers = supabase_headers()
     params = {
@@ -458,6 +455,8 @@ async def fetch_history(limit: int) -> list[dict[str, Any]]:
         "order": "created_at.desc",
         "limit": str(limit),
     }
+    if user_id:
+        params["user_id"] = f"eq.{user_id}"
 
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.get(
@@ -470,6 +469,7 @@ async def fetch_history(limit: int) -> list[dict[str, Any]]:
     return [
         {
             "id": row["id"],
+            "user_id": row.get("user_id"),
             "filename": row["filename"],
             "predicted_class": row["category"],
             "specific_class": row["predicted_class"],
@@ -481,6 +481,57 @@ async def fetch_history(limit: int) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def calculate_streak(created_at_values: list[str]) -> int:
+    scan_dates: set[Any] = set()
+    for value in created_at_values:
+        try:
+            scan_dates.add(datetime.fromisoformat(value.replace("Z", "+00:00")).date())
+        except (TypeError, ValueError):
+            continue
+
+    if not scan_dates:
+        return 0
+
+    today = datetime.now(timezone.utc).date()
+    current = today if today in scan_dates else max(scan_dates)
+    streak = 0
+
+    while current in scan_dates:
+        streak += 1
+        current = current.fromordinal(current.toordinal() - 1)
+
+    return streak
+
+
+def build_stats_from_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+    total_scans = len(rows)
+    return {
+        "total_scans": total_scans,
+        "points": total_scans * 10,
+        "streak": calculate_streak([row.get("created_at", "") for row in rows]),
+    }
+
+
+async def fetch_user_stats(user_id: str) -> dict[str, int]:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        rows = [item for item in memory_history if item.get("user_id") == user_id]
+        return build_stats_from_rows(rows)
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_HISTORY_TABLE}",
+            params={
+                "select": "id,created_at",
+                "user_id": f"eq.{user_id}",
+                "order": "created_at.desc",
+                "limit": "10000",
+            },
+            headers=supabase_headers(),
+        )
+    response.raise_for_status()
+    return build_stats_from_rows(response.json())
 
 
 def utc_now() -> str:
@@ -685,20 +736,65 @@ async def toggle_community_like(post_id: str, liked: bool = True) -> dict[str, A
 
 async def fetch_leaderboard() -> list[dict[str, Any]]:
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        return memory_leaderboard
+        users_by_id = {user["id"]: user for user in memory_users.values()}
+        scans_by_user: dict[str, list[dict[str, Any]]] = {}
+        for item in memory_history:
+            user_id = item.get("user_id")
+            if user_id:
+                scans_by_user.setdefault(user_id, []).append(item)
+
+        rows = []
+        for user_id, scans in scans_by_user.items():
+            user = users_by_id.get(user_id, {})
+            stats = build_stats_from_rows(scans)
+            rows.append({
+                "name": user.get("name") or "Eco Warrior",
+                "scans": stats["total_scans"],
+                "points": stats["points"],
+            })
+
+        rows.sort(key=lambda item: item["points"], reverse=True)
+        return [{"rank": index + 1, **item} for index, item in enumerate(rows)]
 
     async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(
-            f"{SUPABASE_URL}/rest/v1/{SUPABASE_LEADERBOARD_TABLE}",
-            params={"select": "*", "order": "points.desc", "limit": "20"},
+        history_response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_HISTORY_TABLE}",
+            params={
+                "select": "user_id,created_at",
+                "user_id": "not.is.null",
+                "order": "created_at.desc",
+                "limit": "10000",
+            },
             headers=supabase_headers(),
         )
-    response.raise_for_status()
-    rows = response.json()
-    return [
-        {"rank": index + 1, "name": row["name"], "scans": int(row.get("scans") or 0), "points": int(row.get("points") or 0)}
-        for index, row in enumerate(rows)
-    ] or memory_leaderboard
+        history_response.raise_for_status()
+        history_rows = history_response.json()
+
+        users_response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_USERS_TABLE}",
+            params={"select": "id,name"},
+            headers=supabase_headers(),
+        )
+        users_response.raise_for_status()
+        users_by_id = {row["id"]: row for row in users_response.json()}
+
+    scans_by_user: dict[str, list[dict[str, Any]]] = {}
+    for row in history_rows:
+        user_id = row.get("user_id")
+        if user_id:
+            scans_by_user.setdefault(user_id, []).append(row)
+
+    items = []
+    for user_id, scans in scans_by_user.items():
+        stats = build_stats_from_rows(scans)
+        items.append({
+            "name": users_by_id.get(user_id, {}).get("name") or "Eco Warrior",
+            "scans": stats["total_scans"],
+            "points": stats["points"],
+        })
+
+    items.sort(key=lambda item: item["points"], reverse=True)
+    return [{"rank": index + 1, **item} for index, item in enumerate(items[:20])]
 
 
 async def fetch_weekly_challenge() -> dict[str, Any]:
@@ -795,7 +891,7 @@ async def update_password(user_id: str, payload: PasswordUpdate) -> None:
     response.raise_for_status()
 
 
-async def classify_upload(file: UploadFile) -> dict[str, Any]:
+async def classify_upload(file: UploadFile, user_id: str | None = None) -> dict[str, Any]:
     current_model = load_model_once()
     if current_model is None:
         detail = "Model belum dimuat."
@@ -833,6 +929,7 @@ async def classify_upload(file: UploadFile) -> dict[str, Any]:
         predicted_label=predicted_label,
         confidence=float(np.max(prediction)),
         raw_predictions=[float(score) for score in scores],
+        user_id=user_id,
     )
 
     try:
@@ -873,23 +970,32 @@ async def auth_login(payload: AuthRequest) -> dict[str, Any]:
 
 
 @app.post(f"{API_PREFIX}/classify")
-async def classify(file: UploadFile = File(...)) -> dict[str, Any]:
-    return await classify_upload(file)
+async def classify(file: UploadFile = File(...), user_id: str | None = Form(default=None)) -> dict[str, Any]:
+    return await classify_upload(file, user_id=user_id)
 
 
 @app.post("/predict")
-async def predict_compat(file: UploadFile = File(...)) -> dict[str, Any]:
-    return await classify_upload(file)
+async def predict_compat(file: UploadFile = File(...), user_id: str | None = Form(default=None)) -> dict[str, Any]:
+    return await classify_upload(file, user_id=user_id)
 
 
 @app.get(f"{API_PREFIX}/history")
-async def history(limit: int = 20) -> dict[str, Any]:
+async def history(limit: int = 20, user_id: str | None = None) -> dict[str, Any]:
     safe_limit = min(max(limit, 1), 100)
     try:
-        items = await fetch_history(safe_limit)
+        items = await fetch_history(safe_limit, user_id=user_id)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Gagal mengambil riwayat dari Supabase: {exc}") from exc
     return {"items": items}
+
+
+@app.get(f"{API_PREFIX}/users/{{user_id}}/stats")
+async def user_stats(user_id: str) -> dict[str, Any]:
+    try:
+        stats = await fetch_user_stats(user_id)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil statistik pengguna: {exc}") from exc
+    return {"stats": stats}
 
 
 @app.get(f"{API_PREFIX}/community/challenge")
