@@ -51,6 +51,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_HISTORY_TABLE = os.getenv("SUPABASE_HISTORY_TABLE", "scan_history")
 SUPABASE_USERS_TABLE = os.getenv("SUPABASE_USERS_TABLE", "app_users")
+SUPABASE_COMMUNITY_POSTS_TABLE = os.getenv("SUPABASE_COMMUNITY_POSTS_TABLE", "community_posts")
+SUPABASE_COMMUNITY_COMMENTS_TABLE = os.getenv("SUPABASE_COMMUNITY_COMMENTS_TABLE", "community_comments")
+SUPABASE_LEADERBOARD_TABLE = os.getenv("SUPABASE_LEADERBOARD_TABLE", "community_leaderboard")
+SUPABASE_TRIVIA_TABLE = os.getenv("SUPABASE_TRIVIA_TABLE", "eco_trivia")
+SUPABASE_CHALLENGES_TABLE = os.getenv("SUPABASE_CHALLENGES_TABLE", "weekly_challenges")
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -102,12 +107,103 @@ model: Any | None = None
 model_error: str | None = None
 memory_history: list[dict[str, Any]] = []
 memory_users: dict[str, dict[str, Any]] = {}
+memory_community_posts: list[dict[str, Any]] = [
+    {
+        "id": "6a58f05e-6815-46f4-89c3-70ad589db1f6",
+        "author": "Nadia",
+        "badge": "Eco Mentor",
+        "title": "Tips memilah sampah dapur",
+        "body": "Pisahkan kulit buah dan sisa sayur sejak awal. Wadah kecil di dekat meja masak bikin kebiasaan ini lebih gampang.",
+        "type": "post",
+        "tag": "",
+        "likes": 128,
+        "comments": [
+            {
+                "id": "b3b8e585-dbdc-41d1-9477-4c37623682fb",
+                "author": "Sari",
+                "body": "Aku pakai wadah bekas es krim, ternyata praktis banget.",
+                "created_at": "Hari ini",
+                "replies": [],
+            }
+        ],
+        "created_at": "Hari ini",
+    },
+    {
+        "id": "65055bff-4a69-42c8-b163-cb59d1d2a900",
+        "author": "EcoScan",
+        "badge": "Panduan",
+        "title": "Simpan limbah B3 terpisah",
+        "body": "Baterai, lampu, dan obat kedaluwarsa jangan dicampur dengan sampah rumah tangga.",
+        "type": "tip",
+        "tag": "Keamanan",
+        "likes": 51,
+        "comments": [],
+        "created_at": "Minggu ini",
+    },
+]
+memory_leaderboard: list[dict[str, Any]] = [
+    {"rank": 1, "name": "Raka", "scans": 48, "points": 320},
+    {"rank": 2, "name": "Nadia", "scans": 41, "points": 286},
+    {"rank": 3, "name": "Bima", "scans": 36, "points": 244},
+    {"rank": 4, "name": "Sari", "scans": 29, "points": 198},
+]
+memory_challenge: dict[str, Any] = {
+    "id": "weekly-plastic-10",
+    "title": "Scan 10 sampah plastik",
+    "description": "Kumpulkan scan plastik bersih minggu ini dan bagikan tips pemilahanmu.",
+    "current": 6,
+    "target": 10,
+    "reward": 80,
+    "ends_at": "Minggu ini",
+}
+memory_trivia: list[dict[str, Any]] = [
+    {
+        "id": "trivia-plastic",
+        "title": "Fakta Daur Ulang",
+        "text": "Botol plastik PET sebaiknya dicuci, dikeringkan, lalu disetor ke bank sampah.",
+        "details": "Botol PET yang bersih lebih mudah diterima bank sampah karena tidak mencemari material lain.",
+        "type": "plastic",
+    },
+    {
+        "id": "trivia-organic",
+        "title": "Sampah Organik",
+        "text": "Sisa sayur dan buah bisa diolah menjadi kompos untuk mengurangi sampah rumah.",
+        "details": "Sampah organik seperti kulit buah, sisa sayur, ampas kopi, dan daun kering bisa masuk komposter.",
+        "type": "organic",
+    },
+]
 
 
 class AuthRequest(BaseModel):
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=6, max_length=128)
     name: str | None = Field(default=None, max_length=80)
+
+
+class CommunityPostCreate(BaseModel):
+    title: str = Field(min_length=3, max_length=120)
+    body: str = Field(min_length=3, max_length=1000)
+    author: str = Field(default="Eco Warrior", max_length=80)
+    badge: str = Field(default="Anggota", max_length=40)
+    user_id: str | None = None
+    tag: str | None = Field(default=None, max_length=40)
+    type: str = Field(default="post", pattern="^(post|tip)$")
+
+
+class CommunityCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=600)
+    author: str = Field(default="Eco Warrior", max_length=80)
+    user_id: str | None = None
+    parent_id: str | None = None
+
+
+class CommunityLikeUpdate(BaseModel):
+    liked: bool = True
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    email: str | None = Field(default=None, min_length=5, max_length=254)
 
 
 def load_model_once() -> Any | None:
@@ -356,6 +452,289 @@ async def fetch_history(limit: int) -> list[dict[str, Any]]:
     ]
 
 
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def public_post(post: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": post["id"],
+        "author": post.get("author") or "Eco Warrior",
+        "badge": post.get("badge") or "Anggota",
+        "title": post["title"],
+        "body": post["body"],
+        "type": post.get("type") or "post",
+        "tag": post.get("tag") or "",
+        "likes": int(post.get("likes") or 0),
+        "comments": post.get("comments") or [],
+        "created_at": post.get("created_at") or utc_now(),
+    }
+
+
+def nest_comments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    comments_by_id: dict[str, dict[str, Any]] = {}
+    roots: list[dict[str, Any]] = []
+
+    for row in rows:
+        comment = {
+            "id": row["id"],
+            "author": row.get("author") or "Eco Warrior",
+            "body": row["body"],
+            "created_at": row.get("created_at") or utc_now(),
+            "replies": [],
+        }
+        comments_by_id[comment["id"]] = comment
+
+    for row in rows:
+        comment = comments_by_id[row["id"]]
+        parent_id = row.get("parent_id")
+        if parent_id and parent_id in comments_by_id:
+            comments_by_id[parent_id]["replies"].append(comment)
+        else:
+            roots.append(comment)
+
+    return roots
+
+
+def filter_posts(items: list[dict[str, Any]], search: str | None) -> list[dict[str, Any]]:
+    keyword = (search or "").strip().lower()
+    if not keyword:
+        return items
+
+    return [
+        item
+        for item in items
+        if any(
+            keyword in str(item.get(field, "")).lower()
+            for field in ("title", "body", "author", "badge", "tag")
+        )
+    ]
+
+
+async def fetch_community_posts(search: str | None = None) -> list[dict[str, Any]]:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return filter_posts([public_post(post) for post in memory_community_posts], search)
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        posts_response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_COMMUNITY_POSTS_TABLE}",
+            params={"select": "*", "order": "created_at.desc"},
+            headers=supabase_headers(),
+        )
+        posts_response.raise_for_status()
+        post_rows = posts_response.json()
+
+        comments_response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_COMMUNITY_COMMENTS_TABLE}",
+            params={"select": "*", "order": "created_at.asc", "limit": "500"},
+            headers=supabase_headers(),
+        )
+        comments_response.raise_for_status()
+        comment_rows = comments_response.json()
+
+    comments_by_post: dict[str, list[dict[str, Any]]] = {}
+    for row in comment_rows:
+        comments_by_post.setdefault(row["post_id"], []).append(row)
+
+    items = []
+    for row in post_rows:
+        row["comments"] = nest_comments(comments_by_post.get(row["id"], []))
+        items.append(public_post(row))
+
+    return filter_posts(items, search)
+
+
+async def create_community_post(payload: CommunityPostCreate) -> dict[str, Any]:
+    post = {
+        "id": str(uuid4()),
+        "user_id": payload.user_id,
+        "author": payload.author.strip() or "Eco Warrior",
+        "badge": payload.badge.strip() or "Anggota",
+        "title": payload.title.strip(),
+        "body": payload.body.strip(),
+        "type": payload.type,
+        "tag": (payload.tag or "").strip(),
+        "likes": 0,
+        "created_at": utc_now(),
+    }
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        memory_community_posts.insert(0, {**post, "comments": []})
+        return public_post(memory_community_posts[0])
+
+    headers = {**supabase_headers("return=representation"), "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_COMMUNITY_POSTS_TABLE}",
+            json=post,
+            headers=headers,
+        )
+    response.raise_for_status()
+    saved = response.json()[0]
+    saved["comments"] = []
+    return public_post(saved)
+
+
+async def add_community_comment(post_id: str, payload: CommunityCommentCreate) -> dict[str, Any]:
+    comment = {
+        "id": str(uuid4()),
+        "post_id": post_id,
+        "parent_id": payload.parent_id,
+        "user_id": payload.user_id,
+        "author": payload.author.strip() or "Eco Warrior",
+        "body": payload.body.strip(),
+        "created_at": utc_now(),
+    }
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        target = next((post for post in memory_community_posts if post["id"] == post_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
+        public_comment = {k: comment[k] for k in ("id", "author", "body", "created_at")}
+        public_comment["replies"] = []
+        if payload.parent_id:
+            parent = next((item for item in target["comments"] if item["id"] == payload.parent_id), None)
+            if parent:
+                parent.setdefault("replies", []).append(public_comment)
+            else:
+                target["comments"].append(public_comment)
+        else:
+            target["comments"].append(public_comment)
+        return public_comment
+
+    headers = {**supabase_headers("return=representation"), "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.post(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_COMMUNITY_COMMENTS_TABLE}",
+            json=comment,
+            headers=headers,
+        )
+    response.raise_for_status()
+    row = response.json()[0]
+    return {
+        "id": row["id"],
+        "author": row.get("author") or "Eco Warrior",
+        "body": row["body"],
+        "created_at": row["created_at"],
+        "replies": [],
+    }
+
+
+async def toggle_community_like(post_id: str, liked: bool = True) -> dict[str, Any]:
+    delta = 1 if liked else -1
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        target = next((post for post in memory_community_posts if post["id"] == post_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
+        target["likes"] = max(0, int(target.get("likes") or 0) + delta)
+        return {"likes": target["likes"]}
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        get_response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_COMMUNITY_POSTS_TABLE}",
+            params={"select": "likes", "id": f"eq.{post_id}", "limit": "1"},
+            headers=supabase_headers(),
+        )
+        get_response.raise_for_status()
+        rows = get_response.json()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Postingan tidak ditemukan.")
+
+        likes = max(0, int(rows[0].get("likes") or 0) + delta)
+        patch_response = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_COMMUNITY_POSTS_TABLE}",
+            params={"id": f"eq.{post_id}"},
+            json={"likes": likes},
+            headers={**supabase_headers("return=minimal"), "Content-Type": "application/json"},
+        )
+    patch_response.raise_for_status()
+    return {"likes": likes}
+
+
+async def fetch_leaderboard() -> list[dict[str, Any]]:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return memory_leaderboard
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_LEADERBOARD_TABLE}",
+            params={"select": "*", "order": "points.desc", "limit": "20"},
+            headers=supabase_headers(),
+        )
+    response.raise_for_status()
+    rows = response.json()
+    return [
+        {"rank": index + 1, "name": row["name"], "scans": int(row.get("scans") or 0), "points": int(row.get("points") or 0)}
+        for index, row in enumerate(rows)
+    ] or memory_leaderboard
+
+
+async def fetch_weekly_challenge() -> dict[str, Any]:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return memory_challenge
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_CHALLENGES_TABLE}",
+            params={"select": "*", "order": "created_at.desc", "limit": "1"},
+            headers=supabase_headers(),
+        )
+    response.raise_for_status()
+    rows = response.json()
+    return rows[0] if rows else memory_challenge
+
+
+async def fetch_trivia_items() -> list[dict[str, Any]]:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return memory_trivia
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_TRIVIA_TABLE}",
+            params={"select": "*", "order": "created_at.desc", "limit": "20"},
+            headers=supabase_headers(),
+        )
+    response.raise_for_status()
+    return response.json() or memory_trivia
+
+
+async def update_profile(user_id: str, payload: ProfileUpdate) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if payload.name is not None:
+        updates["name"] = payload.name.strip()
+    if payload.email is not None:
+        updates["email"] = normalize_email(payload.email)
+
+    if not updates:
+        raise HTTPException(status_code=422, detail="Tidak ada data profil yang diperbarui.")
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        user = next((item for item in memory_users.values() if item["id"] == user_id), None)
+        if not user:
+            return {"id": user_id, **updates}
+        old_email = user["email"]
+        user.update(updates)
+        if user["email"] != old_email:
+            memory_users.pop(old_email, None)
+            memory_users[user["email"]] = user
+        return public_user(user)
+
+    headers = {**supabase_headers("return=representation"), "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_USERS_TABLE}",
+            params={"id": f"eq.{user_id}"},
+            json=updates,
+            headers=headers,
+        )
+    response.raise_for_status()
+    rows = response.json()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Pengguna tidak ditemukan.")
+    return public_user(rows[0])
+
+
 async def classify_upload(file: UploadFile) -> dict[str, Any]:
     current_model = load_model_once()
     if current_model is None:
@@ -451,3 +830,74 @@ async def history(limit: int = 20) -> dict[str, Any]:
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Gagal mengambil riwayat dari Supabase: {exc}") from exc
     return {"items": items}
+
+
+@app.get(f"{API_PREFIX}/community/challenge")
+async def community_challenge() -> dict[str, Any]:
+    try:
+        challenge = await fetch_weekly_challenge()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil tantangan mingguan: {exc}") from exc
+    return {"challenge": challenge}
+
+
+@app.get(f"{API_PREFIX}/community/posts")
+async def community_posts(search: str | None = None) -> dict[str, Any]:
+    try:
+        items = await fetch_community_posts(search)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil feed komunitas: {exc}") from exc
+    return {"items": items}
+
+
+@app.post(f"{API_PREFIX}/community/posts")
+async def community_post_create(payload: CommunityPostCreate) -> dict[str, Any]:
+    try:
+        item = await create_community_post(payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal menyimpan postingan: {exc}") from exc
+    return {"item": item}
+
+
+@app.post(f"{API_PREFIX}/community/posts/{{post_id}}/comments")
+async def community_comment_create(post_id: str, payload: CommunityCommentCreate) -> dict[str, Any]:
+    try:
+        item = await add_community_comment(post_id, payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal menyimpan komentar: {exc}") from exc
+    return {"item": item}
+
+
+@app.post(f"{API_PREFIX}/community/posts/{{post_id}}/like")
+async def community_like(post_id: str, payload: CommunityLikeUpdate) -> dict[str, Any]:
+    try:
+        return await toggle_community_like(post_id, payload.liked)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal memperbarui like: {exc}") from exc
+
+
+@app.get(f"{API_PREFIX}/community/leaderboard")
+async def community_leaderboard() -> dict[str, Any]:
+    try:
+        items = await fetch_leaderboard()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil leaderboard: {exc}") from exc
+    return {"items": items}
+
+
+@app.get(f"{API_PREFIX}/trivia")
+async def trivia() -> dict[str, Any]:
+    try:
+        items = await fetch_trivia_items()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal mengambil eco trivia: {exc}") from exc
+    return {"items": items}
+
+
+@app.put(f"{API_PREFIX}/users/{{user_id}}")
+async def user_update(user_id: str, payload: ProfileUpdate) -> dict[str, Any]:
+    try:
+        user = await update_profile(user_id, payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Gagal memperbarui profil: {exc}") from exc
+    return {"user": user}
