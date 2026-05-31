@@ -759,9 +759,12 @@ async def fetch_leaderboard() -> list[dict[str, Any]]:
             user = users_by_id.get(user_id, {})
             stats = build_stats_from_rows(scans)
             rows.append({
+                "id": user_id,
                 "name": user.get("name") or "Eco Warrior",
+                "avatar_url": user.get("avatar_url") or "",
                 "scans": stats["total_scans"],
                 "points": stats["points"],
+                "level_title": stats["level_title"],
             })
 
         rows.sort(key=lambda item: item["points"], reverse=True)
@@ -783,7 +786,7 @@ async def fetch_leaderboard() -> list[dict[str, Any]]:
 
         users_response = await client.get(
             f"{SUPABASE_URL}/rest/v1/{SUPABASE_USERS_TABLE}",
-            params={"select": "id,name"},
+            params={"select": "id,name,avatar_url"},
             headers=supabase_headers(),
         )
         users_response.raise_for_status()
@@ -799,9 +802,12 @@ async def fetch_leaderboard() -> list[dict[str, Any]]:
     for user_id, scans in scans_by_user.items():
         stats = build_stats_from_rows(scans)
         items.append({
+            "id": user_id,
             "name": users_by_id.get(user_id, {}).get("name") or "Eco Warrior",
+            "avatar_url": users_by_id.get(user_id, {}).get("avatar_url") or "",
             "scans": stats["total_scans"],
             "points": stats["points"],
+            "level_title": stats["level_title"],
         })
 
     items.sort(key=lambda item: item["points"], reverse=True)
