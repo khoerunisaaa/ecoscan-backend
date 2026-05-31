@@ -206,6 +206,7 @@ class CommunityLikeUpdate(BaseModel):
 class ProfileUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     email: str | None = Field(default=None, min_length=5, max_length=254)
+    avatar_url: str | None = Field(default=None, max_length=3_000_000)
 
 
 class PasswordUpdate(BaseModel):
@@ -282,6 +283,7 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "id": user["id"],
         "email": user["email"],
         "name": user["name"],
+        "avatar_url": user.get("avatar_url") or "",
         "created_at": user["created_at"],
     }
 
@@ -343,6 +345,7 @@ async def create_user(email: str, password: str, name: str) -> dict[str, Any]:
         "id": str(uuid4()),
         "email": email,
         "name": name,
+        "avatar_url": "",
         "password_hash": hash_password(password),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -733,6 +736,8 @@ async def update_profile(user_id: str, payload: ProfileUpdate) -> dict[str, Any]
         updates["name"] = payload.name.strip()
     if payload.email is not None:
         updates["email"] = normalize_email(payload.email)
+    if payload.avatar_url is not None:
+        updates["avatar_url"] = payload.avatar_url.strip()
 
     if not updates:
         raise HTTPException(status_code=422, detail="Tidak ada data profil yang diperbarui.")

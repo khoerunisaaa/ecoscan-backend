@@ -23,9 +23,13 @@ create table if not exists public.app_users (
   id uuid primary key,
   email text not null unique,
   name text not null,
+  avatar_url text not null default '',
   password_hash text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.app_users
+  add column if not exists avatar_url text not null default '';
 
 create index if not exists app_users_email_idx
   on public.app_users (email);
