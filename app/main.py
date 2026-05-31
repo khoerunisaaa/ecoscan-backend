@@ -69,10 +69,10 @@ CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
 
 CATEGORY_MAP = {
     "biological": "Organik",
-    "paper": "Organik",
-    "cardboard": "Organik",
+    "paper": "Kertas",
+    "cardboard": "Kertas",
     "organik": "Organik",
-    "kertas": "Organik",
+    "kertas": "Kertas",
     "plastic": "Anorganik",
     "glass": "Anorganik",
     "metal": "Anorganik",
@@ -80,15 +80,17 @@ CATEGORY_MAP = {
     "shoes": "Anorganik",
     "anorganik": "Anorganik",
     "battery": "B3",
-    "trash": "B3",
+    "trash": "Residu",
     "b3": "B3",
-    "residu": "B3",
+    "residu": "Residu",
 }
 
 HANDLING_ADVICE = {
     "Organik": "Pisahkan dari sampah kering, lalu olah menjadi kompos atau serahkan ke pengelola organik.",
     "Anorganik": "Bersihkan, keringkan, lalu setorkan ke bank sampah atau pusat daur ulang.",
     "B3": "Jangan dicampur dengan sampah lain. Simpan tertutup dan serahkan ke titik pengumpulan limbah B3.",
+    "Kertas": "Pastikan kertas kering, tidak berminyak, lalu kumpulkan terpisah untuk didaur ulang.",
+    "Residu": "Masukkan ke wadah residu karena sulit didaur ulang atau dikomposkan secara mandiri.",
 }
 
 

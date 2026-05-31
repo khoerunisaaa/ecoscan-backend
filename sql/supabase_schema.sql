@@ -2,7 +2,7 @@ create table if not exists public.scan_history (
   id uuid primary key,
   filename text not null,
   predicted_class text not null,
-  category text not null check (category in ('Organik', 'Anorganik', 'B3')),
+  category text not null check (category in ('Organik', 'Anorganik', 'B3', 'Kertas', 'Residu')),
   confidence numeric not null check (confidence >= 0 and confidence <= 1),
   handling_advice text not null,
   raw_predictions jsonb not null default '[]'::jsonb,
