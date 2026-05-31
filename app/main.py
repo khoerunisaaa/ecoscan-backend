@@ -505,16 +505,27 @@ def calculate_streak(created_at_values: list[str]) -> int:
     return streak
 
 
-def build_stats_from_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+def build_stats_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total_scans = len(rows)
+    points = total_scans * 10
+    level = min(5, points // 100 + 1)
+    level_titles = {
+        1: "Eco Starter",
+        2: "Waste Sorter",
+        3: "Green Guardian",
+        4: "Recycle Hero",
+        5: "Eco Warrior",
+    }
     return {
         "total_scans": total_scans,
-        "points": total_scans * 10,
+        "points": points,
         "streak": calculate_streak([row.get("created_at", "") for row in rows]),
+        "level": level,
+        "level_title": level_titles[level],
     }
 
 
-async def fetch_user_stats(user_id: str) -> dict[str, int]:
+async def fetch_user_stats(user_id: str) -> dict[str, Any]:
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         rows = [item for item in memory_history if item.get("user_id") == user_id]
         return build_stats_from_rows(rows)
