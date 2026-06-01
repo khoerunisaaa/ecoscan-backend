@@ -39,7 +39,9 @@ Endpoint utama:
 - `GET /api/v1/search?q={keyword}`
 - `GET /api/v1/history`
 - `GET /api/v1/notifications?user_id={user_id}`
+- `GET /api/v1/challenges/weekly?user_id={user_id}` untuk data challenge + progres user
 - `GET /api/v1/challenges/weekly/status?user_id={user_id}`
+- `POST /api/v1/challenges/weekly/progress` dengan JSON `{"user_id":"...","increment":1}` atau `{"user_id":"...","current_count":5}`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `GET /health`
