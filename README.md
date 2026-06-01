@@ -8,7 +8,9 @@ FastAPI backend untuk klasifikasi gambar sampah EcoScan, siap local development 
 cd backend
 py -3.11 -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -20,10 +22,24 @@ docker build -t ecoscan-api .
 docker run --env-file .env -p 8000:8000 ecoscan-api
 ```
 
+## Test
+
+```bash
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
 Endpoint utama:
 
 - `POST /api/v1/classify` dengan multipart field `file`
+- `GET /api/v1/search?q={keyword}`
 - `GET /api/v1/history`
+- `GET /api/v1/notifications?user_id={user_id}`
+- `GET /api/v1/challenges/weekly/status?user_id={user_id}`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `GET /health`

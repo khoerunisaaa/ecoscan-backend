@@ -1,13 +1,13 @@
 from app.main import build_scan_response, map_category
 
 
-def test_maps_specific_classes_to_three_main_categories():
+def test_maps_specific_classes_to_model_categories():
     assert map_category("biological") == "Organik"
-    assert map_category("paper") == "Organik"
+    assert map_category("paper") == "Kertas"
     assert map_category("plastic") == "Anorganik"
     assert map_category("metal") == "Anorganik"
     assert map_category("battery") == "B3"
-    assert map_category("trash") == "B3"
+    assert map_category("trash") == "Residu"
 
 
 def test_response_keeps_frontend_compatibility():
